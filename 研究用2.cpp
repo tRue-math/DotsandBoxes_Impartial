@@ -34,28 +34,14 @@ void Search2();
 
 void Support();
 
+int Square_Count(int);
+
 int main() {
 	cin.tie(nullptr);
 	ios_base::sync_with_stdio(false);
 	cout << "縦,横を入力" << endl;
 	cin >> N >> M;
 	Support();
-
-	/*
-	cout << "今引かれている線の本数を入力" << endl;
-	int x;
-	cin >> x;
-	llint Game = 0;
-	if (x != 0) {
-		cout << "線が引かれている箇所を入力" << endl;
-		rep(i, x) {
-			int y;
-			cin >> y;
-			Game += (llint)1 << y;
-		}
-	}
-	cout << Count(Game) << endl;
-	*/
 	return 0;
 }
 
@@ -65,6 +51,7 @@ int main() {
 //バグあり直せ6/10→直した6/17
 void Support() {
 	vint Grundy((llint)1 << (N * (M + 1) + (N + 1) * M));
+	int Cnt = 0;
 	{
 		string fName = "Grundy\\";
 		fName += ('0' + N);
@@ -83,22 +70,31 @@ void Support() {
 			if (fs.eof())break;
 			if (buf[0] == '-')Grundy[Game] = -1;
 			else {
-				Grundy[Game] = 0;
-				rep(i, buf.size()) {
-					Grundy[Game] *= 10;
-					Grundy[Game] += (int)(buf[i] - '0');
-				}
+				//1桁なので1回だけに変更12/16
+				Grundy[Game] = (int)(buf[0] - '0');
 			}
+			if (Grundy[Game] == 2)Cnt++;
 		}
 	}
-
-	//番号をシャッフルして戦略にランダム性を持たせる(12/5)
+	cout << Cnt << endl;
+	
+	//ランダム性を持たせる(2/28)
 	srand(time(NULL));
-	vint Number(N * (M + 1) + (N + 1) * M);
-	rep(i, N * (M + 1) + (N + 1) * M)Number[i] = i;
-	rep(i, 20000) {
-		int x = rand() % (N * (M + 1) + (N + 1) * M), y = rand() % (N * (M + 1) + (N + 1) * M);
-		swap(Number[x], Number[y]);
+	vint Numa(N), Numb(M), Num4(4);
+	rep(i, N)Numa[i] = i;
+	rep(i, M)Numb[i] = i;
+	rep(i, 4)Num4[i] = i;
+	rep(i, 10000) {
+		int x = rand() % N, y = rand() % N;
+		swap(Numa[x], Numa[y]);
+	}
+	rep(i, 10000) {
+		int x = rand() % M, y = rand() % M;
+		swap(Numb[x], Numb[y]);
+	}
+	rep(i, 10000) {
+		int x = rand() % 4, y = rand() % 4;
+		swap(Num4[x], Num4[y]);
 	}
 
 	cout << "今引かれている線の本数を入力" << endl;
@@ -125,13 +121,61 @@ void Support() {
 				break;
 			}
 			else {
-				for (int i : Number) {
-					llint k = (llint)1 << i;
-					if (!(Game & k) && !Grundy[Game | k]) {
-						cout << i << "に線を引いてください" << endl;
-						Game |= k;
-						break;
+				//正方形の連取を考慮して動かす(2/27)
+				bool tmp = true;
+				int After = -1;
+				set<int>visited;
+				queue<int>que;
+				que.push(Game);
+				while (tmp && !que.empty()) {
+					llint G = que.front(); que.pop();
+					if (visited.find(G) != visited.end())continue;
+					visited.insert(G);
+					for (auto i : Numa) {
+						if (!tmp)break;
+						for (auto j : Numb) {
+							if (!tmp)break;
+							int udlr[4]; refer(i, j, udlr);
+							int cnt = 0;
+							llint d = -1;
+							rep(k, 4) {
+								if (G & ((llint)1 << udlr[k])) cnt++;
+								else d = (llint)1 << udlr[k];
+							}
+							if (cnt == 4)continue;
+							else if (cnt == 3) {
+								if (visited.find(G | d) == visited.end())que.push(G | d);
+							}
+							else {
+								for (auto k : Num4) {
+									llint t = (llint)1 << udlr[k];
+									if (!(G & t) && Square_Count(G) == Square_Count(G | t)) {
+										//置けたらこれで判定できる
+										if (!Grundy[G | t]) {
+											After = G | t;
+											tmp = false;
+											break;
+										}
+									}
+								}
+							}
+						}
 					}
+				}
+
+				if (tmp) {
+					//これが表示されることはありません(2/27)
+					//万一表示されることがありましたら、そのケースを作者へ報告ください
+					cout << "これはバグです\nでも結局勝てません\n諦めてください" << endl;
+				}
+				else {
+					rep(i, N * (M + 1) + (N + 1) * M) {
+						llint t = (llint)1 << i;
+						if (!(Game & t) && (After & t)) {
+							cout << i << "に線を引いてください" << endl;
+						}
+					}
+					Game = After;
 				}
 				while (1) {
 					cout << "相手が線を引いた箇所を入力(-1で終了)" << endl;
@@ -149,61 +193,9 @@ void Support() {
 	return;
 }
 
-//N*Mの盤面を解析し、盤面(draw)、Grundy数の順番でtest.txtに書き出す
-//-1:探索対象外、0:後手必勝、100:その手番で先手必勝、その他:先手必勝
-void Search() {
-
-	string fileName = "Grundy_";
-	fileName += ('0' + N);
-	fileName += 'x';
-	fileName += ('0' + M);
-	fileName += ".txt";
-	ofstream ofs(fileName, ofstream::app);
-	if (!ofs) {
-		cout << "ファイルが開けませんでした。" << endl;
-		return;
-	}
-
-	//その盤面でスタートした時に
-	//0なら後手必勝、1なら先手必勝、100ならその手番で勝ち
-	vint Grundy((llint)1 << (N * (M + 1) + (N + 1) * M), -1);
-	drep(Game, 1 << (N * (M + 1) + (N + 1) * M)) {
-		if (Square_Search(Game)) {
-			Grundy[Game] = -1;
-		}
-		else if (Count(Game) > N * M / 2) {
-			Grundy[Game] = 100;
-		}
-		else {
-			set<int>s;
-			rep(i, N * (M + 1) + (N + 1) * M) {
-				if (!(Game & (1 << i))) {
-					s.insert(Grundy[Game | (1 << i)]);
-				}
-			}
-			int mex = 0;
-			if (s.size() == 0) {
-				Grundy[Game] = 1;
-			}
-			else {
-				while (s.find(mex) != s.end()) {
-					mex++;
-				}
-				Grundy[Game] = mex;
-			}
-		}
-		if (Grundy[Game] != -1) {
-			draw(Game, fileName);
-			ofs << Grundy[Game] << endl << endl;
-		}
-	}
-	cout << Grundy[0] << endl;
-	return;
-}
-
-
 //N*Mの盤面を解析し、ナンバリング逆順でGrundy数をtest.txtに書き出す
 //-1:探索対象外、0:後手必勝、1:先手必勝、2:その手番で先手必勝
+//2は5008638通り存在した12/16
 void Search2() {
 
 	string fileName = "Grundy\\";
@@ -235,15 +227,16 @@ void Search2() {
 			queue<int>que;
 			que.push(Game);
 			while (!isOK && !que.empty()) {
-				int G = que.front(); que.pop();
+				llint G = que.front(); que.pop();
 				if (visited.find(G) != visited.end())continue;
 				visited.insert(G);
 				rep(i, N)rep(j, M) {
 					int udlr[4]; refer(i, j, udlr);
-					int cnt = 0, d = -1;
+					int cnt = 0;
+					llint d = -1;
 					rep(k, 4) {
-						if (G & (1 << udlr[k])) cnt++;
-						else d = 1 << udlr[k];
+						if (G & ((llint)1 << udlr[k])) cnt++;
+						else d = (llint)1 << udlr[k];
 					}
 					if (cnt == 4)continue;
 					else if (cnt == 3) {
@@ -251,11 +244,11 @@ void Search2() {
 					}
 					else {
 						rep(k, 4) {
-							int t = 1 << udlr[k];
-							if (!(G & t)) {
+							llint t = (llint)1 << udlr[k];
+							if (!(G & t) && Square_Count(G) == Square_Count(G | t)) {
 								//探索対象外に出たら勝ちと認識させる→対象外に出られる盤面には移動したくなくなる(12/4)
 								if (Grundy[G | t] <= 0) {
-									isOK = true; 
+									isOK = true;
 									i = N; j = M; break;
 								}
 							}
@@ -486,4 +479,23 @@ bool Square_Search(int Game) {
 		}
 	}
 	return cnt >= (N * M + 1) / 2;
+}
+
+//盤面にある正方形の数を返す(2/28)
+//O(NM)
+int Square_Count(int Game) {
+	int cnt = 0;
+	rep(i, N) {
+		rep(j, M) {
+			int udlr[4];
+			refer(i, j, udlr);
+			if ((Game & (1 << udlr[0])) &&
+				(Game & (1 << udlr[1])) &&
+				(Game & (1 << udlr[2])) &&
+				(Game & (1 << udlr[3]))) {
+				cnt++;
+			}
+		}
+	}
+	return cnt;
 }
